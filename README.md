@@ -340,6 +340,17 @@ SEC는 요청마다 연락처가 담긴 User-Agent를 요구한다.
 export SEC_USER_AGENT="이름 you@example.com"
 ```
 
+안 넘겨도 돌아간다 — `iren_data.py` 가 기본값을 들고 있다. 넘길 때 걸리는
+함정이 둘 있다.
+
+- **`users.noreply.github.com` 주소는 거부당한다.** 같은 요청이 다른 주소로는
+  200이 나온다. SEC가 봇으로 거르는 것으로 보인다
+- **GitHub Actions는 없는 시크릿을 빈 문자열로 넘긴다.** 그래서 코드가
+  `os.environ.get(이름, 기본값)` 이 아니라 `get(이름) or 기본값` 을 쓴다.
+  전자는 `""` 를 돌려주고, SEC는 User-Agent 없는 요청으로 보고 403을 준다
+
+둘 다 403으로 나타나므로, 403일 때 이 내용을 에러 메시지로 찍는다.
+
 ## 돌리는 법
 
 ```bash
