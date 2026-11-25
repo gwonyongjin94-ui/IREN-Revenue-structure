@@ -43,13 +43,9 @@ def draw(bl, revenue, out_path):
     commenced = bl.lease_payments.get("Total", 0.0)
     not_commenced = max(bl.leases - commenced, 0.0)
 
-    fig, (top, bottom) = plt.subplots(
-        2, 1, figsize=(12, 8.2), dpi=160,
-        gridspec_kw={"height_ratios": [1, 1.15], "hspace": 0.38})
-    fig.patch.set_facecolor(idata.SURFACE)
+    fig, (top, bottom) = idata.figure([1.0, 1.15], height=8.6)
 
     # --- 위: 구성 ------------------------------------------------------
-    idata.style_axes(top)
     top.grid(axis="y", visible=False)
     top.grid(axis="x", color=idata.GRID, linewidth=0.8, zorder=0)
 
@@ -71,35 +67,32 @@ def draw(bl, revenue, out_path):
         left += value
 
     # 범례를 막대 밑에 설명과 함께 둔다 — 색만으로는 세 다리의 성격 차이가 안 보인다
-    y = -0.52
+    y = 0.40
     for name, value, color, note in parts:
-        top.annotate("■", (0, y), xycoords=("axes fraction", "data"), xytext=(2, 0),
-                     textcoords="offset points", color=color, fontsize=11, va="center")
-        top.annotate(f"{name.replace(chr(10), ' ')} — {note}  "
-                     f"({value / bl.total * 100:.0f}%)",
-                     (0, y), xycoords=("axes fraction", "data"), xytext=(20, 0),
-                     textcoords="offset points", fontsize=9.5,
-                     color=idata.INK_SECONDARY, va="center")
-        y -= 0.30
+        top.annotate("■", (0.0, y), xycoords="axes fraction", xytext=(2, 0),
+                     textcoords="offset points", color=color, fontsize=11,
+                     va="center")
+        top.annotate(idata.tex_safe(
+            f"{name.replace(chr(10), ' ')} ({value / bl.total * 100:.0f}%) — {note}"),
+            (0.0, y), xycoords="axes fraction", xytext=(20, 0),
+            textcoords="offset points", fontsize=9.5,
+            color=idata.INK_SECONDARY, va="center")
+        y -= 0.15
 
-    top.set_ylim(-1.5, 0.5)
+    top.set_ylim(-1.05, 0.35)
     top.set_yticks([])
     top.set_xticks(range(0, int(bl.total / B) + 5, 5))
     top.xaxis.set_major_formatter(FuncFormatter(lambda v, _: f"${v:,.0f}B"))
-    top.set_title(idata.tex_safe(
-        f"수주잔고 ${bl.total/B:,.1f}B 의 구성 — {bl.as_of}"),
-        fontsize=15, color=idata.INK_PRIMARY, fontweight="bold", loc="left", pad=16)
-
     ttm = sum(r.total for r in revenue[-4:])
-    top.annotate(idata.tex_safe(
-        f"직전 4개 분기 실제 매출 ${ttm/B:,.2f}B — 잔고는 그 {bl.total/ttm:,.0f}배다"),
-        (0.0, 1.02), xycoords="axes fraction", fontsize=9.5, color=idata.INK_MUTED)
+    idata.titles(top, f"수주잔고 ${bl.total/B:,.1f}B 의 구성 — {bl.as_of}",
+                 f"직전 4개 분기 실제 매출 ${ttm/B:,.2f}B — 잔고는 그 "
+                 f"{bl.total/ttm:,.0f}배다")
 
     # --- 아래: 시간 분포 -----------------------------------------------
-    idata.style_axes(bottom)
     years, values = [], []
     for name, value in bl.lease_payments.items():
-        if name == "Total":
+        # 합계와 금액 0인 구간은 축만 늘리고 아무것도 말해 주지 않는다
+        if name == "Total" or not value:
             continue
         fy = fiscal_year_key(name)
         years.append(("잔여 FY2027" if "Remainder" in name else
@@ -140,22 +133,17 @@ def draw(bl, revenue, out_path):
 
     bottom.set_xticks(xs)
     bottom.set_xticklabels(years, fontsize=9.5)
+    bottom.set_yticks([0, 0.5, 1.0, 1.5, 2.0])
     bottom.yaxis.set_major_formatter(FuncFormatter(lambda v, _: f"${v:,.1f}B"))
-    bottom.set_title("계약으로 확정된 수취액의 시간 분포", fontsize=13,
-                     color=idata.INK_PRIMARY, fontweight="bold", loc="left", pad=12)
+    shown = commenced + (bl.rpo_next_12m or 0) + (bl.rpo_following_12m or 0)
+    idata.titles(bottom, "계약으로 확정된 수취액의 시간 분포",
+                 f"여기 보이는 ${shown/B:,.1f}B 는 잔고 ${bl.total/B:,.1f}B 의 "
+                 "일부다 — 나머지는 개시 전 임대라, 데이터센터가 완공돼야 "
+                 "이 축에 올라온다", size=13)
     bottom.legend(loc="upper right", frameon=False, fontsize=9.5)
-    bottom.annotate(
-        idata.tex_safe(
-            f"두 막대의 합 ${(commenced + (bl.rpo_next_12m or 0) + (bl.rpo_following_12m or 0))/B:,.1f}B "
-            f"는 잔고 ${bl.total/B:,.1f}B 의 일부일 뿐이다. 나머지는 개시 전 임대로, "
-            "데이터센터가 완공돼야 이 축에 올라온다."),
-        xy=(0.0, -0.20), xycoords="axes fraction", fontsize=9.5,
-        color=idata.INK_SECONDARY)
 
-    fig.text(0.5, 0.012,
-             "출처: SEC EDGAR 10-Q 매출 주석 (잔여 수행의무 · 최소 임대 수취액)",
-             ha="center", fontsize=8.5, color=idata.INK_MUTED)
-    fig.subplots_adjust(top=0.90, bottom=0.135, left=0.075, right=0.975)
+    idata.footer(fig, "출처: SEC EDGAR 10-Q 매출 주석 "
+                      "(잔여 수행의무 · 최소 임대 수취액)")
     fig.savefig(out_path, facecolor=idata.SURFACE)
     print(f"저장 {out_path}")
 

@@ -47,13 +47,9 @@ def implied_rate() -> float:
 
 
 def draw(revenue, out_path):
-    fig, (top, bottom) = plt.subplots(
-        2, 1, figsize=(12, 8.8), dpi=160,
-        gridspec_kw={"height_ratios": [1.25, 1], "hspace": 0.40})
-    fig.patch.set_facecolor(idata.SURFACE)
+    fig, (top, bottom) = idata.figure([1.2, 1.0], height=9.0)
 
     # --- 위: MW x 단가 --------------------------------------------------
-    idata.style_axes(top)
     mws = list(range(0, 901, 10))
     rates = [
         (disc.REVENUE_PER_MW_SHORT.value, "단기 계약 $40M/MW", idata.MINING_COLOR, (2, 2)),
@@ -108,15 +104,11 @@ def draw(revenue, out_path):
     top.set_yticks(range(0, 23, 4))
     top.set_xlabel("가동 MW (IT)", fontsize=10, color=idata.INK_SECONDARY)
     top.yaxis.set_major_formatter(FuncFormatter(lambda v, _: f"${v:,.0f}B"))
-    top.set_title("ARR = 가동 MW(IT) x MW당 연매출", fontsize=15,
-                  color=idata.INK_PRIMARY, fontweight="bold", loc="left", pad=16)
-    top.annotate("회사가 공시한 단가와, 회사 목표가 함의하는 단가가 어긋난다 — "
-                 "그 차이가 ARR 추정의 가장 큰 미지수다",
-                 (0.0, 1.03), xycoords="axes fraction", fontsize=9.5,
-                 color=idata.INK_MUTED)
+    idata.titles(top, "ARR = 가동 MW(IT) x MW당 연매출",
+                 "회사가 공시한 계약 단가와, 회사 목표가 함의하는 단가가 "
+                 "어긋난다 — 그 차이가 ARR 추정의 가장 큰 미지수다")
 
     # --- 아래: 분기 매출의 연율화 ----------------------------------------
-    idata.style_axes(bottom)
     cloud = [(r.quarter, r.ai_cloud) for r in revenue if r.ai_cloud]
     xs = list(range(len(cloud)))
     ys = [v * 4 / B for _, v in cloud]
@@ -136,18 +128,12 @@ def draw(revenue, out_path):
     bottom.set_xticks(xs)
     bottom.set_xticklabels([idata.label(q) for q, _ in cloud], fontsize=9.5)
     bottom.yaxis.set_major_formatter(FuncFormatter(lambda v, _: f"${v:,.1f}B"))
-    bottom.set_title("AI 클라우드 분기 매출 x 4", fontsize=13, color=idata.INK_PRIMARY,
-                     fontweight="bold", loc="left", pad=12)
-    bottom.annotate(
-        "ARR은 분기말 가동 기준이고 분기 매출은 기간 평균이라, 램프업 중에는 "
-        "연율화 값이 ARR보다 낮게 나오는 게 정상이다",
-        (0.0, -0.26), xycoords="axes fraction", fontsize=9.5,
-        color=idata.INK_SECONDARY)
+    idata.titles(bottom, "AI 클라우드 분기 매출 x 4",
+                 "ARR은 분기말 가동 기준이고 분기 매출은 기간 평균이라, "
+                 "램프업 중에는 연율화 값이 ARR보다 낮게 나오는 게 정상이다",
+                 size=13)
 
-    fig.text(0.5, 0.012,
-             "출처: SEC EDGAR 10-Q · Q1 FY27 보도자료 (각주 4·5·7·12)",
-             ha="center", fontsize=8.5, color=idata.INK_MUTED)
-    fig.subplots_adjust(top=0.91, bottom=0.115, left=0.075, right=0.975)
+    idata.footer(fig, "출처: SEC EDGAR 10-Q · Q1 FY27 보도자료 (각주 4·5·7·12)")
     fig.savefig(out_path, facecolor=idata.SURFACE)
     print(f"저장 {out_path}")
 

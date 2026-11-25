@@ -101,6 +101,60 @@ def tex_safe(text: str) -> str:
     return text.replace("$", r"\$")
 
 
+def figure(height_ratios: list[float] | None = None, *, width: float = 12.0,
+           height: float = 8.0, independent: bool = False):
+    """표준 도화지. 다섯 장이 같은 여백과 같은 간격을 쓰게 한다.
+
+    constrained_layout 을 쓴다. 손으로 subplots_adjust 를 맞추면 라벨 길이가
+    조금만 바뀌어도 제목과 축이 겹친다 — 지금까지 그 겹침을 숫자로 때워 왔다.
+
+    independent=True 면 패널마다 따로 레이아웃을 잡는다. 기본값은 두 패널의
+    왼쪽 여백을 맞추는데, 아래 패널에만 긴 y축 라벨이 있으면 위 패널까지
+    그만큼 오른쪽으로 밀려 제목이 가운데 떠 보인다.
+    """
+    import matplotlib.pyplot as plt
+    ratios = height_ratios or [1]
+    fig = plt.figure(figsize=(width, height), dpi=160, layout="constrained")
+    fig.patch.set_facecolor(SURFACE)
+    fig.get_layout_engine().set(h_pad=0.09, w_pad=0.04, hspace=0.09, wspace=0.0)
+
+    if independent and len(ratios) > 1:
+        panels = fig.subfigures(len(ratios), 1, height_ratios=ratios, hspace=0.0)
+        axes = []
+        for panel in panels:
+            panel.patch.set_facecolor(SURFACE)
+            axes.append(panel.subplots())
+    else:
+        drawn = fig.subplots(len(ratios), 1,
+                             gridspec_kw={"height_ratios": ratios})
+        axes = [drawn] if len(ratios) == 1 else list(drawn)
+
+    for ax in axes:
+        style_axes(ax)
+    return fig, axes
+
+
+def titles(ax, main: str, sub: str = "", *, size: float = 15.0) -> None:
+    """제목과 부제. 부제는 축 위 여백에 얹어 제목과 한 덩어리로 보이게 한다."""
+    ax.set_title(tex_safe(main), fontsize=size, color=INK_PRIMARY,
+                 fontweight="bold", loc="left",
+                 pad=26 if sub else 12)
+    if sub:
+        ax.annotate(tex_safe(sub), (0.0, 1.015), xycoords="axes fraction",
+                    fontsize=9.5, color=INK_MUTED, va="bottom")
+
+
+def footer(fig, text: str) -> None:
+    """출처 한 줄. 모든 차트가 같은 자리에 같은 크기로 단다."""
+    fig.supxlabel(tex_safe(text), fontsize=8.5, color=INK_MUTED, ha="center")
+
+
+def money(value: float, unit: str = "B", decimals: int = 1) -> str:
+    """차트 라벨용 금액. tex_safe 까지 해서 돌려준다."""
+    scale = {"B": 1e9, "M": 1e6, "": 1.0}[unit]
+    return tex_safe(f"${value/scale:,.{decimals}f}{unit}")
+
+
 def label(q: Quarter) -> str:
     return f"FY{str(q[0])[2:]}Q{q[1]}"
 

@@ -193,108 +193,117 @@ def per_share_curve(arrs, multiple, base: Scenario, net_debt_now, shares_now,
 
 def draw(results, price, price_date, net_debt_now, shares_now, converts,
          multiples, out_path):
-    fig, (top, bottom) = plt.subplots(
-        2, 1, figsize=(12, 9.4), dpi=160,
-        gridspec_kw={"height_ratios": [1, 1.1], "hspace": 0.62})
-    fig.patch.set_facecolor(idata.SURFACE)
+    fig, (top, bottom) = idata.figure([1.0, 1.05], height=9.0)
 
     # --- 위: 시나리오 ----------------------------------------------------
-    idata.style_axes(top)
+    fair = fair_value(results)
     xs = list(range(len(results)))
     tops = [max(r.per_share, 0) for r in results]
-    top.bar(xs, tops, width=0.5, color=[r.scenario.color for r in results], zorder=3)
-    for x, r in zip(xs, results):
-        shown = (f"${r.per_share:,.0f}" if r.per_share > 0
-                 else f"$0  (계산상 -${abs(r.per_share):,.0f})")
-        top.annotate(idata.tex_safe(shown),
-                     (x, max(r.per_share, 0)), xytext=(0, 7),
-                     textcoords="offset points", ha="center", fontsize=13,
-                     fontweight="bold", color=idata.INK_PRIMARY)
+    ceiling = max(max(tops), fair, price) * 1.28
+
+    top.bar(xs, tops, width=0.46, color=[r.scenario.color for r in results],
+            zorder=3)
+    for x, r, value in zip(xs, results, tops):
+        if value == 0:
+            # 0 인 막대는 아무것도 안 그려지면 "빠진 막대"로 보인다. 바닥에
+            # 얕은 자국을 남겨 '계산 결과가 0'임을 보이게 한다
+            top.bar([x], [ceiling * 0.016], width=0.46,
+                    color=r.scenario.color, alpha=0.55, zorder=3)
+        label = (f"${value:,.0f}" if value > 0
+                 else f"$0   계산상 -${abs(r.per_share):,.0f}")
+        top.annotate(idata.tex_safe(label), (x, value if value else ceiling * 0.016),
+                     xytext=(0, 9), textcoords="offset points", ha="center",
+                     fontsize=15 if value else 13, fontweight="bold",
+                     color=idata.INK_PRIMARY)
         top.annotate(idata.tex_safe(
-            f"확률 {r.scenario.prob*100:,.0f}%\n"
-            f"ARR ${r.scenario.arr/B:,.1f}B · 배수 {r.scenario.multiple:,.1f}x\n"
-            f"EBITDA ${r.ebitda/B:,.2f}B · 완공 순차입 ${r.net_debt/B:,.1f}B\n"
-            f"CAPEX ${r.scenario.capex/B:,.0f}B · 0이 되는 배수 "
-            f"{r.net_debt/r.ebitda:,.1f}x"
-            + ("\n전환사채 주식 전환 반영" if r.converts_dilute else "")),
-            (x, 0), xytext=(0, -64), textcoords="offset points", ha="center",
-            fontsize=9, color=idata.INK_SECONDARY, annotation_clip=False)
+            f"확률 {r.scenario.prob*100:,.0f}%   ARR ${r.scenario.arr/B:,.1f}B"
+            f"   배수 {r.scenario.multiple:,.0f}x"),
+            (x, 0), xycoords=("data", "axes fraction"), xytext=(0, -42),
+            textcoords="offset points", ha="center", fontsize=9.5,
+            color=idata.INK_SECONDARY, annotation_clip=False)
 
-    fair = fair_value(results)
-    top.axhline(fair, color=idata.INK_PRIMARY, linewidth=1.8, zorder=4)
-    top.annotate(idata.tex_safe(f"적정가격 ${fair:,.2f}"), (0.0, fair),
-                 xycoords=("axes fraction", "data"), xytext=(4, 6),
-                 textcoords="offset points", fontsize=11,
-                 color=idata.INK_PRIMARY, fontweight="bold")
+    for value, color, name, dy in (
+            (fair, idata.INK_PRIMARY, f"적정가격 ${fair:,.2f}", 6),
+            (price, idata.PRICE_COLOR, f"현재 주가 ${price:,.2f}", -15)):
+        top.axhline(value, color=color, linewidth=1.6, zorder=4,
+                    linestyle="-" if dy > 0 else (0, (5, 3)))
+        top.annotate(idata.tex_safe(name), (0.0, value),
+                     xycoords=("axes fraction", "data"), xytext=(4, dy),
+                     textcoords="offset points", fontsize=10.5,
+                     color=color, fontweight="bold")
 
-    top.axhline(price, color=idata.PRICE_COLOR, linewidth=1.6, linestyle="--", zorder=4)
-    top.annotate(idata.tex_safe(f"현재 주가 ${price:,.2f} ({price_date})"),
-                 (1.0, price), xycoords=("axes fraction", "data"),
-                 xytext=(-4, -14), textcoords="offset points", ha="right",
-                 fontsize=10, color=idata.PRICE_COLOR, fontweight="bold")
-
+    top.set_ylim(0, ceiling)
+    top.set_xlim(-0.6, len(results) - 0.4)
     top.set_xticks(xs)
-    top.set_xticklabels([r.scenario.name for r in results], fontsize=11)
-    top.tick_params(axis="x", pad=80)
+    top.set_xticklabels([r.scenario.name for r in results], fontsize=11.5)
+    top.tick_params(axis="x", pad=8)
     top.yaxis.set_major_formatter(FuncFormatter(lambda v, _: f"${v:,.0f}"))
-    top.set_title("시나리오별 주당가치", fontsize=15, color=idata.INK_PRIMARY,
-                  fontweight="bold", loc="left", pad=16)
-    top.annotate(idata.tex_safe(
-        f"막대는 완공 시점 값. 적정가격은 그 기댓값을 {HORIZON_YEARS:,.1f}년 "
-        f"· 할인율 {DISCOUNT_RATE*100:,.0f}% 로 현재로 당긴 값이다"),
-                 (0.0, 1.03), xycoords="axes fraction", fontsize=9.5,
-                 color=idata.INK_MUTED)
+    idata.titles(top, "시나리오별 주당가치와 적정가격",
+                 f"막대는 완공 시점 값 · 적정가격은 그 확률가중 기댓값을 "
+                 f"{HORIZON_YEARS:,.1f}년 · 할인율 {DISCOUNT_RATE*100:,.0f}% 로 "
+                 "현재로 당긴 값")
 
     # --- 아래: ARR x 배수 평면 -------------------------------------------
-    idata.style_axes(bottom)
     base = results[1].scenario
-    arrs = [x * 1e8 for x in range(10, 71)]   # $1.0B ~ $7.0B
-    for multiple, dash in zip(multiples, [(1, 0), (5, 2), (2, 2)]):
-        ys = per_share_curve(arrs, multiple, base, net_debt_now, shares_now,
-                             price, converts)
-        line, = bottom.plot([a / B for a in arrs], ys, linewidth=2.0,
-                            color=idata.CLOUD_COLOR, zorder=3)
-        line.set_dashes(dash)
-        last_visible = max((i for i, y in enumerate(ys) if y < 100), default=len(ys) - 1)
-        bottom.annotate(f"{multiple:,.0f}x", (arrs[last_visible] / B, ys[last_visible]),
-                        xytext=(6, -2), textcoords="offset points", fontsize=10,
+    arrs = [x * 1e8 for x in range(10, 71)]
+    xs_b = [a / B for a in arrs]
+    curves = {m: per_share_curve(arrs, m, base, net_debt_now, shares_now,
+                                 price, converts)
+              for m in multiples}
+    lo, mid, hi = (curves[m] for m in sorted(curves))
+
+    # 배수 범위를 면으로 깐다. 선 세 개를 겹쳐 그리면 어느 게 어느 건지
+    # 읽히지 않는데, 면으로 깔면 '불확실성의 폭'으로 바로 읽힌다
+    bottom.fill_between(xs_b, lo, hi, color=idata.CLOUD_COLOR, alpha=0.13,
+                        zorder=2, linewidth=0)
+    bottom.plot(xs_b, mid, color=idata.CLOUD_COLOR, linewidth=2.4, zorder=4)
+    ceiling_b = max(hi) * 1.05
+
+    for values, name in ((hi, f"{max(multiples):,.0f}x"),
+                         (mid, f"{sorted(multiples)[1]:,.0f}x"),
+                         (lo, f"{min(multiples):,.0f}x")):
+        bottom.annotate(name, (xs_b[-1], values[-1]), xytext=(6, -3),
+                        textcoords="offset points", fontsize=10,
                         color=idata.CLOUD_COLOR, fontweight="bold")
 
-    bottom.axhline(price, color=idata.PRICE_COLOR, linewidth=1.6, linestyle="--", zorder=4)
-    bottom.annotate(idata.tex_safe(f"현재 주가 ${price:,.2f}"), (1.05, price),
-                    xytext=(0, 6), textcoords="offset points", fontsize=10,
+    bottom.axhline(price, color=idata.PRICE_COLOR, linewidth=1.6,
+                   linestyle=(0, (5, 3)), zorder=5)
+    bottom.annotate(idata.tex_safe(f"현재 주가 ${price:,.2f}"), (0.0, price),
+                    xycoords=("axes fraction", "data"), xytext=(4, 5),
+                    textcoords="offset points", fontsize=10,
                     color=idata.PRICE_COLOR, fontweight="bold")
-    bottom.axvline(disc.ARR_TARGET.value / B, color=idata.INK_MUTED,
-                   linewidth=1.0, linestyle=":", zorder=2)
-    bottom.annotate(idata.tex_safe(f"회사 목표 ${disc.ARR_TARGET.value/B:,.0f}B"),
-                    (disc.ARR_TARGET.value / B, 0), xytext=(6, 8),
-                    textcoords="offset points", fontsize=9.5, color=idata.INK_SECONDARY)
-    bottom.axvline(disc.ARR_OPERATING.value / B, color=idata.INK_MUTED,
-                   linewidth=1.0, linestyle=":", zorder=2)
-    bottom.annotate(idata.tex_safe(f"현재 가동 ${disc.ARR_OPERATING.value/B:,.0f}B"),
-                    (disc.ARR_OPERATING.value / B, 0), xytext=(6, 8),
-                    textcoords="offset points", fontsize=9.5, color=idata.INK_SECONDARY)
+
+    # 기준 배수 곡선이 현재 주가를 지나는 지점 — 시장이 함의하는 ARR
+    crossing = next((x for x, y in zip(xs_b, mid) if y >= price), None)
+    if crossing:
+        bottom.scatter([crossing], [price], s=70, color=idata.PRICE_COLOR,
+                       zorder=6, edgecolor="white", linewidth=1.4)
+        bottom.annotate(idata.tex_safe(
+            f"현재 주가가 함의하는 ARR 약 ${crossing:,.1f}B"),
+            (crossing, price), xytext=(10, -22), textcoords="offset points",
+            fontsize=9.5, color=idata.INK_SECONDARY)
+
+    for value, name in ((disc.ARR_OPERATING.value / B, "현재 가동"),
+                        (disc.ARR_TARGET.value / B, "회사 목표")):
+        bottom.axvline(value, color=idata.INK_MUTED, linewidth=1.0,
+                       linestyle=":", zorder=2)
+        bottom.annotate(idata.tex_safe(f"{name} ${value:,.0f}B"),
+                        (value, 1.0), xycoords=("data", "axes fraction"),
+                        xytext=(5, -14), textcoords="offset points",
+                        fontsize=9.5, color=idata.INK_SECONDARY)
 
     bottom.set_xlim(1.0, 7.0)
-    bottom.set_ylim(0, 100)
+    bottom.set_ylim(0, ceiling_b)
     bottom.xaxis.set_major_formatter(FuncFormatter(lambda v, _: f"${v:,.0f}B"))
     bottom.yaxis.set_major_formatter(FuncFormatter(lambda v, _: f"${v:,.0f}"))
     bottom.set_xlabel("달성 ARR", fontsize=10, color=idata.INK_SECONDARY)
-    bottom.set_title("달성 ARR과 배수가 만드는 주당가치", fontsize=15,
-                     color=idata.INK_PRIMARY, fontweight="bold", loc="left", pad=16)
-    bottom.annotate(idata.tex_safe(
-        "다른 가정은 기준 시나리오와 같다 — 마진 "
-        f"{base.margin*100:,.0f}%, 선급금이 CAPEX의 {base.prepay_share*100:,.0f}%, "
-        f"증자 ${base.equity_raise/B:,.0f}B, 자본집약도 ARR 1달러당 "
-        f"${base.capex/base.arr:,.2f}. 곡선이 살짝 꺾이는 지점이 전환사채가 "
-        "주식이 되는 구간이다"),
-        (0.0, 1.03), xycoords="axes fraction", fontsize=9.5, color=idata.INK_MUTED)
+    idata.titles(bottom, "달성 ARR과 배수가 만드는 주당가치",
+                 f"띠는 EV/EBITDA {min(multiples):,.0f}~{max(multiples):,.0f}x "
+                 f"구간, 가운데 선이 {sorted(multiples)[1]:,.0f}x · "
+                 "나머지 가정은 기준 시나리오와 같다")
 
-    fig.text(0.5, 0.012,
-             "출처: SEC EDGAR 10-Q · Yahoo Finance · Q1 FY27 보도자료    "
-             "투자 판단이나 권유가 아니다",
-             ha="center", fontsize=8.5, color=idata.INK_MUTED)
-    fig.subplots_adjust(top=0.91, bottom=0.085, left=0.075, right=0.965)
+    idata.footer(fig, "출처: SEC EDGAR 10-Q · Yahoo Finance · Q1 FY27 보도자료    "
+                      "투자 판단이나 권유가 아니다")
     fig.savefig(out_path, facecolor=idata.SURFACE)
     print(f"저장 {out_path}")
 

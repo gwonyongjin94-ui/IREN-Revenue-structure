@@ -34,6 +34,19 @@ import disclosures as disc
 
 B = 1e9
 
+def short_name(debt) -> str:
+    """차트용 짧은 한글 이름. 긴 영문 라벨은 왼쪽 여백을 통째로 먹는다."""
+    name = debt.name
+    m = re.match(r"(\d{4})\s*(?:\((\w+)\))?\s*Convertible", name)
+    if m:
+        month = {"Jun": "6월", "Dec": "12월"}.get(m.group(2) or "", "")
+        return f"전환사채 {m.group(1)}" + (f" ({month})" if month else "")
+    return (name.replace("GPU Financing", "GPU 금융")
+                .replace("USPP Senior Notes", "USPP 선순위")
+                .replace("DDTL Facility", "DDTL 시설")
+                .replace("Other debt", "기타 차입"))
+
+
 KIND_COLOR = {
     "전환사채": idata.PRICE_COLOR,
     "GPU 담보": idata.CLOUD_COLOR,
@@ -43,13 +56,10 @@ KIND_COLOR = {
 
 
 def draw(bs, debts, maturities, out_path):
-    fig, (top, bottom) = plt.subplots(
-        2, 1, figsize=(12, 8.6), dpi=160,
-        gridspec_kw={"height_ratios": [1, 1], "hspace": 0.42})
-    fig.patch.set_facecolor(idata.SURFACE)
+    fig, (top, bottom) = idata.figure([1.0, 1.05], height=9.0,
+                                      independent=True)
 
     # --- 위: 수요 vs 원천 ----------------------------------------------
-    idata.style_axes(top)
     need = disc.CAPEX_REMAINING_FY27.value
     cash = bs["cash_total"]
     committed_other = max(disc.FUNDING_COMMITTED.value - cash, 0.0)
@@ -77,20 +87,16 @@ def draw(bs, debts, maturities, out_path):
     top.set_xticks([0, 1])
     top.set_xticklabels(["FY2027 남은 CAPEX", "조달 계획"], fontsize=11)
     top.yaxis.set_major_formatter(FuncFormatter(lambda v, _: f"${v:,.0f}B"))
-    top.set_title("FY2027 자금 수요와 원천", fontsize=15, color=idata.INK_PRIMARY,
-                  fontweight="bold", loc="left", pad=16)
-    top.annotate(idata.tex_safe(
-        f"기준 {disc.PERIOD_END} · 분기 영업현금흐름으로는 못 메운다 "
-        f"(Q1 FY27 영업현금흐름 $0.5B)"),
-        (0.0, 1.03), xycoords="axes fraction", fontsize=9.5, color=idata.INK_MUTED)
+    idata.titles(top, "FY2027 자금 수요와 원천",
+                 f"기준 {disc.PERIOD_END} · 영업현금흐름으로는 못 메운다 "
+                 "(Q1 FY27 영업현금흐름 $0.5B)")
 
     # --- 아래: 차입 스택 -------------------------------------------------
-    idata.style_axes(bottom)
     bottom.grid(axis="y", visible=False)
     bottom.grid(axis="x", color=idata.GRID, linewidth=0.8, zorder=0)
 
     order = sorted(debts, key=lambda d: (list(KIND_COLOR).index(d.kind), -d.principal))
-    names = [d.name for d in order]
+    names = [short_name(d) for d in order]
     ys = list(range(len(order)))[::-1]
     bottom.barh(ys, [d.principal / B for d in order], height=0.62,
                 color=[KIND_COLOR[d.kind] for d in order], zorder=3)
@@ -111,24 +117,14 @@ def draw(bs, debts, maturities, out_path):
         by_kind[d.kind] = by_kind.get(d.kind, 0.0) + d.principal
     legend = " · ".join(f"{k} ${v/B:,.1f}B ({v/total*100:.0f}%)"
                         for k, v in sorted(by_kind.items(), key=lambda kv: -kv[1]))
-    bottom.set_title(idata.tex_safe(f"차입 스택 ${total/B:,.1f}B — {bs['as_of']}"),
-                     fontsize=15, color=idata.INK_PRIMARY, fontweight="bold",
-                     loc="left", pad=16)
-    bottom.annotate(idata.tex_safe(legend), (0.0, 1.03), xycoords="axes fraction",
-                    fontsize=9.5, color=idata.INK_MUTED)
-
     wall = {k: v for k, v in maturities.items() if k != "Total"}
     near = sum(v for k, v in wall.items() if re.search(r"Remainder|2028|2029", k))
-    bottom.annotate(idata.tex_safe(
-        f"FY2029까지 상환 예정 ${near/B:,.1f}B · 나머지 ${(total-near)/B:,.1f}B 는 FY2030 이후. "
-        f"순차입 ${bs['net_debt']/B:,.1f}B (현금 ${bs['cash_total']/B:,.1f}B 차감 후)"),
-        xy=(0.0, -0.17), xycoords="axes fraction", fontsize=9.5,
-        color=idata.INK_SECONDARY)
+    idata.titles(bottom, f"차입 스택 ${total/B:,.1f}B — {bs['as_of']}",
+                 f"{legend}  ·  FY2029까지 상환 ${near/B:,.1f}B, "
+                 f"나머지는 FY2030 이후  ·  순차입 ${bs['net_debt']/B:,.1f}B")
 
-    fig.text(0.5, 0.012,
-             "출처: SEC EDGAR 10-Q 차입 주석 · Q1 FY27 보도자료 (각주 11·12)",
-             ha="center", fontsize=8.5, color=idata.INK_MUTED)
-    fig.subplots_adjust(top=0.91, bottom=0.10, left=0.17, right=0.975)
+    idata.footer(fig, "출처: SEC EDGAR 10-Q 차입 주석 · "
+                      "Q1 FY27 보도자료 (각주 11·12)")
     fig.savefig(out_path, facecolor=idata.SURFACE)
     print(f"저장 {out_path}")
 
