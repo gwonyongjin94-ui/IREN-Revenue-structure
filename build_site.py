@@ -37,9 +37,9 @@ CHARTS = [
     ("funding.png", "자금 — $15B 중 $6B 이 열려 있다",
      "차입 $10B 중 3분의 2가 전환사채다. 주가가 전환가에서 멀어지면 "
      "그냥 빚으로 남는다."),
-    ("valuation.png", "적정가격 — 단일 숫자가 아니라 범위",
-     "결과는 달성 ARR과 배수에 거의 전적으로 달려 있다. "
-     "레버리지가 높아 가정이 조금만 움직여도 주당가치가 크게 흔들린다."),
+    ("valuation.png", "적정가격",
+     "세 결말에 확률을 붙여 기댓값을 내고, 완공까지 1.5년을 15%로 할인한 값이다. "
+     "레버리지가 높아 가정이 조금만 움직여도 결과가 크게 흔들린다."),
 ]
 
 PAGE = """<!doctype html>
@@ -122,6 +122,7 @@ def build(repo: str, refresh: bool = False) -> str:
     results = [val.evaluate(s, bs["net_debt"], shares, price, converts)
                for s in val.scenarios()]
     band = sorted(max(r.per_share, 0) for r in results)
+    fair = val.fair_value(results)
 
     q = revenue[-1]
     ev = price * shares + bs["net_debt"]
@@ -138,8 +139,9 @@ def build(repo: str, refresh: bool = False) -> str:
              "목표 달성을 전제한 값"),
         card("남은 CAPEX", f"${disc.CAPEX_REMAINING_FY27.value/B:,.0f}B",
              f"미확보 ${disc.FUNDING_TARGET.value/B:,.0f}B"),
-        card("주당가치 범위", f"${band[0]:,.0f} ~ ${band[-1]:,.0f}",
-             f"중앙 ${band[len(band)//2]:,.0f}"),
+        card("적정가격", f"${fair:,.2f}",
+             f"현재가 대비 {fair/price - 1:+.0%} · 범위 "
+             f"${band[0]:,.0f}~${band[-1]:,.0f}"),
     ])
 
     sections = "".join(

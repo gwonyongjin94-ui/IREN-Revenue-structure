@@ -36,6 +36,8 @@ def build(refresh: bool = False) -> str:
     results = [val.evaluate(s, bs["net_debt"], shares, price, converts)
                for s in val.scenarios()]
     band = sorted(max(r.per_share, 0) for r in results)
+    fair = val.fair_value(results)
+    implied = val.implied_downside(results, price)
 
     q = revenue[-1]
     ttm = sum(r.total for r in revenue[-4:])
@@ -85,8 +87,11 @@ def build(refresh: bool = False) -> str:
         f"| EV / 수주잔고 | {ev/bl.total:,.2f}x |",
         f"| 평균 전환가 | ${conv_principal/conv_shares:,.0f} "
         f"(희석 {conv_shares/M:,.0f}M주) |",
+        f"| **적정가격** | **${fair:,.2f}** ({fair/price - 1:+.0%}) |",
         f"| 주당가치 범위 | ${band[0]:,.0f} ~ ${band[-1]:,.0f} "
-        f"(중앙 ${band[len(band)//2]:,.0f}) |",
+        f"(확률 {' / '.join(f'{r.scenario.prob*100:,.0f}%' for r in results)}) |",
+        f"| 주가가 함의하는 '목표 미달' 확률 | {implied*100:,.0f}% |"
+        if implied == implied else "",
         "",
         "숫자의 근거와 한계는 [README](README.md) 참조. 투자 판단이나 권유가 아니다.",
         "",

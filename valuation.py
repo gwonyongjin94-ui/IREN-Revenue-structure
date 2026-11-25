@@ -52,6 +52,15 @@ OPEX_SLOPE = 0.06   # 목표 ARR을 넘는 매출 1달러당 추가 현금비용
 
 VEST_SHARES = 36.8e6   # 스톡옵션 + RSU. 전환사채는 따로 다룬다
 
+# 시나리오 값은 전부 '완공 시점' 값이다. 거기까지 가는 데 걸리는 시간을 현재로
+# 당겨와야 오늘의 적정가격이 된다. 회사는 $4B ARR 달성을 2027년 1~2월로 제시
+# 했지만 그건 0.3GW 프로그램 얘기고, 그 매출이 온전히 한 해를 돌아 실적으로
+# 확인되는 시점은 FY2028 중반이다. 그래서 1.5년으로 둔다.
+HORIZON_YEARS = 1.5
+# 할인율은 자기자본 요구수익률이다. 이 회사의 베타와 레버리지를 감안한 값이고,
+# 가정이다 — 15%p 를 12%로 바꾸면 적정가격이 약 4% 움직인다.
+DISCOUNT_RATE = 0.15
+
 
 @dataclass(frozen=True)
 class Scenario:
@@ -62,6 +71,7 @@ class Scenario:
     capex: float          # 여기까지 가는 데 더 쓰는 CAPEX
     prepay_share: float   # 그 CAPEX 중 고객 선급금이 덮는 비율
     equity_raise: float   # 증자 금액
+    prob: float           # 이 결말이 일어날 확률
     color: str
     note: str
 
@@ -69,18 +79,18 @@ class Scenario:
 def scenarios() -> list[Scenario]:
     """세 가지 결말. 가정은 전부 여기 적혀 있다."""
     return [
-        Scenario("보수 — 목표 미달", 2.5e9, 0.78, 7.0, 10.0e9, 0.15, 0.0,
+        Scenario("보수 — 목표 미달", 2.5e9, 0.78, 7.0, 10.0e9, 0.15, 0.0, 0.30,
                  idata.DEBT_COLOR,
                  "$15B 중 $10B 을 쓴 채로 자금이 끊겨 ARR은 $2.5B 에서 멈춘다.\n"
                  "마진은 코로케이션 비중이 늘며 하락, 부족분은 전부 차입"),
         Scenario("기준 — 회사 목표 달성", disc.ARR_TARGET.value,
                  disc.AI_CLOUD_GROSS_MARGIN.value, 10.0,
-                 disc.CAPEX_REMAINING_FY27.value, 0.30, 2.0e9,
+                 disc.CAPEX_REMAINING_FY27.value, 0.30, 2.0e9, 0.50,
                  idata.CLOUD_COLOR,
                  "공시한 $4B ARR 을 공시한 $15B CAPEX 로 달성.\n"
                  "현재 마진 유지, 부족분 중 $2B 는 증자"),
         Scenario("낙관 — 0.8GW 절반까지", 6.0e9,
-                 disc.AI_CLOUD_GROSS_MARGIN.value, 13.0, 22.0e9, 0.40, 2.0e9,
+                 disc.AI_CLOUD_GROSS_MARGIN.value, 13.0, 22.0e9, 0.40, 2.0e9, 0.20,
                  idata.LEASE_COLOR,
                  "CY2027 목표 용량의 절반이 추가로 계약·가동.\n"
                  "자본집약도는 목표 구간과 같게 두고 배수만 프리미엄"),
@@ -127,6 +137,46 @@ def evaluate(s: Scenario, net_debt_now: float, shares_now: float,
     return Result(s, ebitda, net_debt, enterprise, equity, shares, per_share, dilute)
 
 
+def discount(value: float) -> float:
+    """완공 시점 값을 오늘로 당긴다."""
+    return value / (1 + DISCOUNT_RATE) ** HORIZON_YEARS
+
+
+def fair_value(results: list[Result]) -> float:
+    """확률가중 기대 주당가치의 현재가치 — 이 저장소가 내는 단일 적정가격.
+
+    범위를 내놓고 끝내면 "그래서 얼마냐"에 답하지 못한다. 그래서 각 결말에
+    확률을 붙여 기댓값을 내고, 완공까지의 시간으로 할인한다. 확률은 가정이고
+    가장 주관적인 입력이다. 그래서 아래 implied_downside()로 '시장은 이걸
+    몇 퍼센트로 보고 있나'를 같이 계산해, 내 확률이 시장과 얼마나 다른지
+    드러낸다. 자기자본이 음수로 나오는 결말은 0으로 자른다 — 주주는 유한책임
+    이라 마이너스까지 책임지지 않는다.
+    """
+    total = sum(r.scenario.prob for r in results)
+    expected = sum(max(r.per_share, 0) * r.scenario.prob for r in results) / total
+    return discount(expected)
+
+
+def implied_downside(results: list[Result], price: float) -> float:
+    """현재 주가가 함의하는 '목표 미달' 확률.
+
+    보수 시나리오의 확률만 움직이고, 나머지 둘의 상대 비중은 그대로 둔다.
+    그러면 미지수가 하나라 바로 풀린다.
+    """
+    downside = results[0]
+    rest = results[1:]
+    weight = sum(r.scenario.prob for r in rest)
+    if weight <= 0:
+        return float("nan")
+    upside = sum(max(r.per_share, 0) * r.scenario.prob for r in rest) / weight
+    if upside <= 0:
+        return float("nan")
+    # price = (1-p) x upside 를 할인한 값. downside 의 주당가치는 0 이므로 빠진다
+    share_of_upside = price / discount(upside)
+    return max(0.0, min(1.0, 1 - share_of_upside)) if max(downside.per_share, 0) == 0 \
+        else float("nan")
+
+
 def per_share_curve(arrs, multiple, base: Scenario, net_debt_now, shares_now,
                     price, converts):
     out = []
@@ -135,7 +185,8 @@ def per_share_curve(arrs, multiple, base: Scenario, net_debt_now, shares_now,
         # CAPEX)를 기준 시나리오 값으로 고정해, 적게 벌면 적게 썼다고 본다.
         capex = base.capex * arr / base.arr
         s = Scenario(base.name, arr, base.margin, multiple, capex,
-                     base.prepay_share, base.equity_raise, base.color, "")
+                     base.prepay_share, base.equity_raise, base.prob,
+                     base.color, "")
         out.append(evaluate(s, net_debt_now, shares_now, price, converts).per_share)
     return out
 
@@ -160,28 +211,37 @@ def draw(results, price, price_date, net_debt_now, shares_now, converts,
                      textcoords="offset points", ha="center", fontsize=13,
                      fontweight="bold", color=idata.INK_PRIMARY)
         top.annotate(idata.tex_safe(
+            f"확률 {r.scenario.prob*100:,.0f}%\n"
             f"ARR ${r.scenario.arr/B:,.1f}B · 배수 {r.scenario.multiple:,.1f}x\n"
             f"EBITDA ${r.ebitda/B:,.2f}B · 완공 순차입 ${r.net_debt/B:,.1f}B\n"
             f"CAPEX ${r.scenario.capex/B:,.0f}B · 0이 되는 배수 "
             f"{r.net_debt/r.ebitda:,.1f}x"
             + ("\n전환사채 주식 전환 반영" if r.converts_dilute else "")),
-            (x, 0), xytext=(0, -52), textcoords="offset points", ha="center",
+            (x, 0), xytext=(0, -64), textcoords="offset points", ha="center",
             fontsize=9, color=idata.INK_SECONDARY, annotation_clip=False)
+
+    fair = fair_value(results)
+    top.axhline(fair, color=idata.INK_PRIMARY, linewidth=1.8, zorder=4)
+    top.annotate(idata.tex_safe(f"적정가격 ${fair:,.2f}"), (0.0, fair),
+                 xycoords=("axes fraction", "data"), xytext=(4, 6),
+                 textcoords="offset points", fontsize=11,
+                 color=idata.INK_PRIMARY, fontweight="bold")
 
     top.axhline(price, color=idata.PRICE_COLOR, linewidth=1.6, linestyle="--", zorder=4)
     top.annotate(idata.tex_safe(f"현재 주가 ${price:,.2f} ({price_date})"),
-                 (len(results) - 0.45, price), xytext=(6, 4),
-                 textcoords="offset points", fontsize=10, color=idata.PRICE_COLOR,
-                 fontweight="bold")
+                 (1.0, price), xycoords=("axes fraction", "data"),
+                 xytext=(-4, -14), textcoords="offset points", ha="right",
+                 fontsize=10, color=idata.PRICE_COLOR, fontweight="bold")
 
     top.set_xticks(xs)
     top.set_xticklabels([r.scenario.name for r in results], fontsize=11)
-    top.tick_params(axis="x", pad=64)
+    top.tick_params(axis="x", pad=80)
     top.yaxis.set_major_formatter(FuncFormatter(lambda v, _: f"${v:,.0f}"))
     top.set_title("시나리오별 주당가치", fontsize=15, color=idata.INK_PRIMARY,
                   fontweight="bold", loc="left", pad=16)
-    top.annotate("완공 시점 기준. 할인하지 않은 값이다 — 도달까지의 시간과 "
-                 "실행 위험은 배수 가정에 들어 있다고 본다",
+    top.annotate(idata.tex_safe(
+        f"막대는 완공 시점 값. 적정가격은 그 기댓값을 {HORIZON_YEARS:,.1f}년 "
+        f"· 할인율 {DISCOUNT_RATE*100:,.0f}% 로 현재로 당긴 값이다"),
                  (0.0, 1.03), xycoords="axes fraction", fontsize=9.5,
                  color=idata.INK_MUTED)
 
@@ -297,9 +357,20 @@ def main():
               + ("  [전환사채 전환 반영]" if r.converts_dilute else ""))
 
     band = sorted(max(r.per_share, 0) for r in results)
+    fair = fair_value(results)
+    implied = implied_downside(results, price)
+    expected = fair * (1 + DISCOUNT_RATE) ** HORIZON_YEARS
     print(f"\n주당가치 범위 ${band[0]:,.0f} ~ ${band[-1]:,.0f} "
-          f"(중앙 ${band[len(band)//2]:,.0f}) · 현재 ${price:,.2f}")
-    print("투자 판단이나 권유가 아니다.")
+          f"(중앙 ${band[len(band)//2]:,.0f})")
+    print(f"확률가중 기대값 (완공 시점)  ${expected:,.2f}")
+    print(f"  할인 {DISCOUNT_RATE*100:,.0f}% x {HORIZON_YEARS:,.1f}년")
+    print(f"적정가격 (현재가치)          ${fair:,.2f}")
+    print(f"현재 주가                    ${price:,.2f}  ({fair/price - 1:+.0%})")
+    if implied == implied:   # NaN 아님
+        print(f"\n현재 주가가 함의하는 '목표 미달' 확률  {implied*100:,.0f}%")
+        print(f"  이 모델이 쓴 확률                     "
+              f"{results[0].scenario.prob*100:,.0f}%")
+    print("\n투자 판단이나 권유가 아니다.")
 
 
 if __name__ == "__main__":
