@@ -26,7 +26,8 @@ import json
 import os
 import re
 import time
-import urllib.request
+
+import requests
 from dataclasses import dataclass
 from datetime import date, datetime, timezone
 from pathlib import Path
@@ -103,12 +104,26 @@ def label(q: Quarter) -> str:
 # --------------------------------------------------------------- 가져오기
 
 def _get(url: str, *, json_accept: bool = False) -> bytes:
-    headers = {"User-Agent": SEC_UA, "Accept-Encoding": "identity"}
+    """SEC 요청. requests 기본 헤더를 그대로 쓴다.
+
+    urllib로 `Accept-Encoding: identity` 를 보내면 데이터센터 IP에서 403이
+    돌아온다 (로컬에서는 통과한다). SEC의 fair access 정책이 압축 응답을
+    받을 수 있는 클라이언트를 전제하기 때문으로 보인다. requests 기본값은
+    gzip·deflate 를 받겠다고 알리므로 그대로 둔다.
+    """
+    headers = {"User-Agent": SEC_UA}
     if json_accept:
         headers["Accept"] = "application/json"
-    req = urllib.request.Request(url, headers=headers)
-    with urllib.request.urlopen(req, timeout=60) as resp:
-        return resp.read()
+    r = requests.get(url, timeout=60, headers=headers)
+    if r.status_code == 403:
+        raise PermissionError(
+            f"SEC가 403으로 막았다. User-Agent 를 확인한다: {SEC_UA!r}\n"
+            "  · '이름 메일주소' 형식이어야 한다\n"
+            "  · 주소에 github.com 계열 도메인이 들어가면 거부된다 "
+            "(users.noreply.github.com 확인)\n"
+            "  · SEC_USER_AGENT 환경변수로 넘긴다")
+    r.raise_for_status()
+    return r.content
 
 
 def _cached(name: str, fetch, refresh: bool = False, *, text: bool = False):
@@ -680,10 +695,11 @@ def dilution(refresh: bool = False) -> dict[str, float]:
 
 def _yahoo(ticker: str, refresh: bool = False, years: int = 5) -> Series:
     def go():
-        url = f"{YAHOO.format(ticker=ticker)}?range={years}y&interval=1d"
-        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
-        with urllib.request.urlopen(req, timeout=60) as r:
-            return json.loads(r.read())
+        r = requests.get(YAHOO.format(ticker=ticker), timeout=60,
+                         headers={"User-Agent": SEC_UA},
+                         params={"range": f"{years}y", "interval": "1d"})
+        r.raise_for_status()
+        return r.json()
 
     payload = _cached(f"price_{ticker.lower()}", go, refresh)
     result = payload["chart"]["result"][0]
