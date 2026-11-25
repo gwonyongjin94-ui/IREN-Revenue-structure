@@ -27,6 +27,8 @@ import os
 import re
 import time
 
+import urllib.request
+
 import requests
 from dataclasses import dataclass
 from datetime import date, datetime, timezone
@@ -64,6 +66,12 @@ SUBMISSIONS = f"https://data.sec.gov/submissions/CIK{CIK}.json"
 CONCEPT = "https://data.sec.gov/api/xbrl/companyconcept/CIK{cik}/{taxonomy}/{tag}.json"
 ARCHIVE = f"https://www.sec.gov/Archives/edgar/data/{int(CIK)}"
 YAHOO = "https://query1.finance.yahoo.com/v8/finance/chart/{ticker}"
+
+# 지도 배경. Natural Earth 는 퍼블릭 도메인이고 110m 해상도 육지 폴리곤이
+# 140KB 밖에 안 된다. cartopy·geopandas 를 끌어오지 않고 matplotlib 으로
+# 폴리곤만 그리면 되므로 의존성이 늘지 않는다.
+NE = ("https://raw.githubusercontent.com/nvkelso/natural-earth-vector/"
+      "master/geojson/{name}.geojson")
 
 Series = list[tuple[date, float]]
 Quarter = tuple[int, int]  # (회계연도, 분기) — 회계연도는 6월 결산
@@ -769,6 +777,61 @@ def _yahoo(ticker: str, refresh: bool = False, years: int = 5) -> Series:
         out.append((datetime.fromtimestamp(int(stamp), tz=timezone.utc).date(), float(close)))
     out.sort()
     return out
+
+
+Ring = list[tuple[float, float]]   # [(경도, 위도), ...]
+
+
+def _geojson_rings(name: str, refresh: bool = False) -> list[Ring]:
+    def go():
+        req = urllib.request.Request(NE.format(name=name),
+                                     headers={"User-Agent": SEC_UA})
+        with urllib.request.urlopen(req, timeout=60) as r:
+            return json.loads(r.read())
+
+    raw = _cached(f"ne_{name}", go, refresh)
+    rings: list[Ring] = []
+    for feature in raw["features"]:
+        geom = feature.get("geometry") or {}
+        kind, coords = geom.get("type"), geom.get("coordinates") or []
+        polygons = [coords] if kind == "Polygon" else coords if kind == "MultiPolygon" else []
+        for polygon in polygons:
+            for ring in polygon:
+                if len(ring) > 2:
+                    rings.append([(float(x), float(y)) for x, y in ring])
+    return rings
+
+
+def land(refresh: bool = False) -> list[Ring]:
+    """세계 육지 폴리곤."""
+    return _geojson_rings("ne_110m_land", refresh)
+
+
+def subdivisions(refresh: bool = False) -> list[Ring]:
+    """주·도 경계. 텍사스와 BC가 어디인지 보이게 하는 용도."""
+    return _geojson_rings("ne_110m_admin_1_states_provinces", refresh)
+
+
+def draw_map(ax, rings: list[Ring], extent: tuple[float, float, float, float],
+             *, fill: str, edge: str, linewidth: float = 0.6) -> None:
+    """위경도를 그대로 x·y 로 쓰는 단순 정방형 도법.
+
+    대륙 단위로 좁게 잘라 보면 왜곡이 눈에 띄지 않고, 투영 라이브러리를
+    끌어오지 않아도 된다. 위도에 따른 가로 압축만 보정한다.
+    """
+    import math
+    from matplotlib.patches import Polygon
+    west, east, south, north = extent
+    for ring in rings:
+        xs = [x for x, _ in ring]
+        ys = [y for _, y in ring]
+        if max(xs) < west or min(xs) > east or max(ys) < south or min(ys) > north:
+            continue
+        ax.add_patch(Polygon(list(zip(xs, ys)), closed=True, facecolor=fill,
+                             edgecolor=edge, linewidth=linewidth, zorder=1))
+    ax.set_xlim(west, east)
+    ax.set_ylim(south, north)
+    ax.set_aspect(1 / math.cos(math.radians((south + north) / 2)))
 
 
 def price(refresh: bool = False) -> Series:

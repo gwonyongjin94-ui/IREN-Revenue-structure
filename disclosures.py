@@ -109,17 +109,60 @@ MINING_IMPAIRMENT_FY26 = Figure(638.8e6, "USD", "10K-FY26",
 CUSTOMER_COUNT = Figure(15, "개", "PR-Q1FY27",
                         "NVIDIA, Microsoft 외 13개사와 계약")
 
-# 사이트 상태는 MW가 공시되지 않아 정성 서술만 가능하다. 차트에 쓰지 않고
-# README의 서술에만 쓴다.
-SITE_STATUS = {
-    "Horizon 1": "Microsoft에 인도 완료 (Q1 FY27)",
-    "Horizon 2-4": "건설 후반",
-    "Childress / Mackenzie": "공랭식 개조 진행",
-    "Sweetwater 1": "액침·수랭 건설 진행",
-    "Sweetwater 2 / Kiowa / Bundey": "개발 초기",
-    "Badajoz (스페인)": "300MW 개발 토목 인허가",
-}
-SITE_STATUS_SRC = "PR-Q1FY27"
+# ----------------------------------------------------------------- 사이트
+
+# 용량은 FY2026 10-K Item 2 Properties 표 그대로다. **gross MW**, 즉 사이트의
+# 계획 총 전력이고 랙에 들어가는 IT MW가 아니다. 둘을 섞으면 안 된다 —
+# $4B ARR 이 대응하는 0.3GW 는 IT 기준이고, 아래 합계 5.6GW 는 gross 기준이다.
+#
+# 단계는 10-K 표에 열로 들어 있지 않아 Q1 FY27 보도자료의 서술에서 옮겼다.
+# 좌표는 사이트가 속한 지명의 대략적 위치다. 필지 좌표가 아니라 지도에서
+# 어느 지역인지 보이게 하는 용도다.
+#
+#   가동    이미 매출을 내고 있는 사이트
+#   건설    착공해 짓는 중
+#   개발    부지·전력은 확보했고 아직 짓지 않았다
+
+@dataclass(frozen=True)
+class Site:
+    name: str          # 표기용 이름
+    region: str        # 지도 패널 구분
+    lat: float
+    lon: float
+    mw: float          # 계획 총 전력 (gross)
+    stage: str         # 가동 | 건설 | 개발
+    note: str = ""
+
+
+SITES = [
+    Site("Canal Flats", "북미", 50.15, -115.85, 30, "가동",
+         "최초 사이트. BC Hydro 수력"),
+    Site("Prince George", "북미", 53.92, -122.75, 50, "가동",
+         "AI 클라우드 GPU 가동"),
+    Site("Mackenzie", "북미", 55.34, -123.09, 80, "가동",
+         "공랭 개조 + 액랭 신규 착공"),
+    Site("Childress", "북미", 34.43, -100.20, 750, "가동",
+         "Horizon 1 Microsoft 인도 완료, Horizon 2~4 건설 후반"),
+    Site("Sweetwater 1", "북미", 32.47, -100.41, 1400, "건설",
+         "액랭 건설 진행"),
+    Site("Sweetwater 2", "북미", 32.30, -100.70, 600, "개발"),
+    Site("Kiowa", "북미", 34.72, -95.90, 1600, "개발",
+         "최대 부지. 오클라호마"),
+    Site("Badajoz", "유럽", 38.88, -6.97, 300, "개발",
+         "300MW 토목 인허가"),
+    Site("Bundey", "오세아니아", -33.95, 139.45, 800, "개발",
+         "애들레이드 북동 약 125km. 2028년 전력 투입 목표"),
+]
+SITES_SRC = "10K-FY26 Item 2 (용량) · PR-Q1FY27 (단계)"
+
+STAGE_ORDER = ["가동", "건설", "개발"]
+
+
+def capacity_by_stage() -> dict[str, float]:
+    out = {k: 0.0 for k in STAGE_ORDER}
+    for s in SITES:
+        out[s.stage] += s.mw
+    return out
 
 
 def check() -> list[str]:
