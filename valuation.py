@@ -52,6 +52,17 @@ OPEX_SLOPE = 0.06   # 목표 ARR을 넘는 매출 1달러당 추가 현금비용
 
 VEST_SHARES = 36.8e6   # 스톡옵션 + RSU. 전환사채는 따로 다룬다
 
+# 자산가치 하한. 사업이 계획대로 안 되면 EBITDA 배수는 무너지지만 데이터센터와
+# GPU는 남는다. 그래서 기업가치의 바닥을 '완공 시점 유형자산 x 회수율'로 깐다.
+#
+# 회수율은 공시에서 읽을 수 없고, 이 저장소에서 확률 다음으로 결과를 크게
+# 흔드는 가정이다. 토지·건물·전력 계약은 잘 받지만 중고 GPU는 수요가 식은
+# 국면에서 특히 안 받으므로 둘의 중간쯤인 60%를 기본값으로 둔다.
+#
+# 보수 시나리오에서 이 값이 58% 아래면 주당가치가 다시 0이 된다. 그만큼
+# 예민하므로 --recovery 로 바꿔 볼 수 있게 열어 둔다.
+ASSET_RECOVERY = 0.60
+
 # 시나리오 값은 전부 '완공 시점' 값이다. 거기까지 가는 데 걸리는 시간을 현재로
 # 당겨와야 오늘의 적정가격이 된다. 회사는 $4B ARR 달성을 2027년 1~2월로 제시
 # 했지만 그건 0.3GW 프로그램 얘기고, 그 매출이 온전히 한 해를 돌아 실적으로
@@ -107,10 +118,13 @@ class Result:
     shares: float
     per_share: float
     converts_dilute: bool
+    floor_bound: bool = False   # 기업가치가 EBITDA가 아니라 자산 하한으로 정해졌나
 
 
 def evaluate(s: Scenario, net_debt_now: float, shares_now: float,
-             price: float, converts: tuple[float, float]) -> Result:
+             price: float, converts: tuple[float, float],
+             assets_now: float = 0.0,
+             recovery: float = ASSET_RECOVERY) -> Result:
     opex = OPEX_AT_TARGET + max(s.arr - disc.ARR_TARGET.value, 0) * OPEX_SLOPE
     ebitda = s.arr * s.margin - opex
 
@@ -121,7 +135,13 @@ def evaluate(s: Scenario, net_debt_now: float, shares_now: float,
     shares = shares_now + VEST_SHARES + (s.equity_raise / price if price else 0)
 
     principal, conv_shares = converts
-    enterprise = ebitda * s.multiple
+    # 계속기업 가치와 청산 바닥 중 큰 쪽. 둘 중 무엇이 값을 정했는지 남긴다 —
+    # 바닥이 이겼다는 건 "이 시나리오에서는 사업이 아니라 자산이 전부"라는 뜻이고,
+    # 그 결론은 회수율 가정 하나에 매달려 있으므로 드러나야 한다.
+    going = ebitda * s.multiple
+    floor = (assets_now + s.capex) * recovery
+    enterprise = max(going, floor)
+    floor_bound = floor > going
     equity = enterprise - net_debt
     per_share = equity / shares if shares else 0.0
 
@@ -134,7 +154,8 @@ def evaluate(s: Scenario, net_debt_now: float, shares_now: float,
         shares += conv_shares
         per_share = equity / shares
 
-    return Result(s, ebitda, net_debt, enterprise, equity, shares, per_share, dilute)
+    return Result(s, ebitda, net_debt, enterprise, equity, shares, per_share,
+                  dilute, floor_bound)
 
 
 def discount(value: float) -> float:
@@ -163,22 +184,21 @@ def implied_downside(results: list[Result], price: float) -> float:
     보수 시나리오의 확률만 움직이고, 나머지 둘의 상대 비중은 그대로 둔다.
     그러면 미지수가 하나라 바로 풀린다.
     """
-    downside = results[0]
+    down = max(results[0].per_share, 0.0)
     rest = results[1:]
     weight = sum(r.scenario.prob for r in rest)
     if weight <= 0:
         return float("nan")
-    upside = sum(max(r.per_share, 0) * r.scenario.prob for r in rest) / weight
-    if upside <= 0:
+    up = sum(max(r.per_share, 0) * r.scenario.prob for r in rest) / weight
+    if up <= down:
         return float("nan")
-    # price = (1-p) x upside 를 할인한 값. downside 의 주당가치는 0 이므로 빠진다
-    share_of_upside = price / discount(upside)
-    return max(0.0, min(1.0, 1 - share_of_upside)) if max(downside.per_share, 0) == 0 \
-        else float("nan")
+    # discount(p x down + (1-p) x up) = price 를 p 에 대해 푼다
+    target = price * (1 + DISCOUNT_RATE) ** HORIZON_YEARS
+    return max(0.0, min(1.0, (target - up) / (down - up)))
 
 
 def per_share_curve(arrs, multiple, base: Scenario, net_debt_now, shares_now,
-                    price, converts):
+                    price, converts, assets_now=0.0, recovery=ASSET_RECOVERY):
     out = []
     for arr in arrs:
         # 곡선 위에서는 CAPEX가 ARR과 같이 움직인다. 자본집약도(ARR 1달러당
@@ -187,12 +207,13 @@ def per_share_curve(arrs, multiple, base: Scenario, net_debt_now, shares_now,
         s = Scenario(base.name, arr, base.margin, multiple, capex,
                      base.prepay_share, base.equity_raise, base.prob,
                      base.color, "")
-        out.append(evaluate(s, net_debt_now, shares_now, price, converts).per_share)
+        out.append(evaluate(s, net_debt_now, shares_now, price, converts,
+                            assets_now, recovery).per_share)
     return out
 
 
 def draw(results, price, price_date, net_debt_now, shares_now, converts,
-         multiples, out_path):
+         multiples, out_path, assets_now=0.0, recovery=ASSET_RECOVERY):
     fig, (top, bottom) = idata.figure([1.0, 1.05], height=9.0)
 
     # --- 위: 시나리오 ----------------------------------------------------
@@ -217,7 +238,8 @@ def draw(results, price, price_date, net_debt_now, shares_now, converts,
                      color=idata.INK_PRIMARY)
         top.annotate(idata.tex_safe(
             f"확률 {r.scenario.prob*100:,.0f}%   ARR ${r.scenario.arr/B:,.1f}B"
-            f"   배수 {r.scenario.multiple:,.0f}x"),
+            f"   배수 {r.scenario.multiple:,.0f}x"
+            + ("\n자산 하한이 값을 정한다" if r.floor_bound else "")),
             (x, 0), xycoords=("data", "axes fraction"), xytext=(0, -42),
             textcoords="offset points", ha="center", fontsize=9.5,
             color=idata.INK_SECONDARY, annotation_clip=False)
@@ -248,7 +270,7 @@ def draw(results, price, price_date, net_debt_now, shares_now, converts,
     arrs = [x * 1e8 for x in range(10, 71)]
     xs_b = [a / B for a in arrs]
     curves = {m: per_share_curve(arrs, m, base, net_debt_now, shares_now,
-                                 price, converts)
+                                 price, converts, assets_now, recovery)
               for m in multiples}
     lo, mid, hi = (curves[m] for m in sorted(curves))
 
@@ -265,6 +287,23 @@ def draw(results, price, price_date, net_debt_now, shares_now, converts,
         bottom.annotate(name, (xs_b[-1], values[-1]), xytext=(6, -3),
                         textcoords="offset points", fontsize=10,
                         color=idata.CLOUD_COLOR, fontweight="bold")
+
+    bound = [evaluate(Scenario(base.name, a, base.margin, sorted(multiples)[1],
+                               base.capex * a / base.arr, base.prepay_share,
+                               base.equity_raise, base.prob, base.color, ""),
+                      net_debt_now, shares_now, price, converts,
+                      assets_now, recovery).floor_bound
+             for a in arrs]
+    if any(bound):
+        edge = xs_b[max(i for i, b in enumerate(bound) if b)]
+        bottom.axvspan(xs_b[0], edge, color=idata.INK_MUTED, alpha=0.07, zorder=1)
+        # 라벨은 띠 안쪽 빈 곳에 세로로 앉힌다. 띠 아래에 가로로 깔면 축 밖으로
+        # 삐져나가 잘린다
+        bottom.annotate(idata.tex_safe(
+            f"자산 하한이\n값을 정하는 구간\n(회수율 {recovery*100:,.0f}%)"),
+            (xs_b[0], 0.86), xycoords=("data", "axes fraction"),
+            xytext=(10, 0), textcoords="offset points", ha="left", va="top",
+            fontsize=9.5, color=idata.INK_SECONDARY, linespacing=1.5)
 
     bottom.axhline(price, color=idata.PRICE_COLOR, linewidth=1.6,
                    linestyle=(0, (5, 3)), zorder=5)
@@ -313,6 +352,8 @@ def main():
     ap.add_argument("--refresh", action="store_true")
     ap.add_argument("--multiples", default="7,10,13",
                     help="아래 패널에 그릴 EV/EBITDA 배수")
+    ap.add_argument("--recovery", type=float, default=ASSET_RECOVERY,
+                    help="자산 하한에 쓰는 회수율 (0~1)")
     ap.add_argument("--out", default=str(idata.OUT_DIR / "valuation.png"))
     args = ap.parse_args()
 
@@ -326,11 +367,13 @@ def main():
     conv_shares = dil.get("Convertible notes", 0.0)
     converts = (conv_principal, conv_shares)
 
-    results = [evaluate(s, bs["net_debt"], shares_now, price, converts)
+    assets_now = bs["ppe"]
+    results = [evaluate(s, bs["net_debt"], shares_now, price, converts,
+                        assets_now, args.recovery)
                for s in scenarios()]
     multiples = [float(x) for x in args.multiples.split(",")]
     draw(results, price, price_date, bs["net_debt"], shares_now, converts,
-         multiples, args.out)
+         multiples, args.out, assets_now, args.recovery)
 
     cap = price * shares_now
     ev = cap + bs["net_debt"]
@@ -350,7 +393,8 @@ def main():
     print(f"  평균 전환가       ${conv_principal/conv_shares:,.2f}"
           f"  (현재 주가의 {conv_principal/conv_shares/price:,.1f}배)")
 
-    print(f"\n시나리오 (현금 영업비용 목표 구간 ${OPEX_AT_TARGET/B:,.2f}B/년 가정)")
+    print(f"\n시나리오 (현금 영업비용 목표 구간 ${OPEX_AT_TARGET/B:,.2f}B/년, "
+          f"자산 회수율 {args.recovery*100:,.0f}% 가정)")
     for r in results:
         s = r.scenario
         print(f"\n  {s.name}")
@@ -358,7 +402,11 @@ def main():
               f"배수 {s.multiple:,.1f}x · CAPEX ${s.capex/B:,.0f}B · "
               f"선급금 {s.prepay_share*100:,.0f}% · 증자 ${s.equity_raise/B:,.1f}B")
         print(f"    자본집약도 ARR 1달러당 ${s.capex/s.arr:,.2f} · "
-              f"자기자본이 0이 되는 배수 {r.net_debt/r.ebitda:,.1f}x")
+              f"계속기업 기준 자기자본이 0이 되는 배수 {r.net_debt/r.ebitda:,.1f}x")
+        floor = (assets_now + s.capex) * args.recovery
+        print(f"    계속기업 EV ${r.ebitda*s.multiple/B:,.1f}B vs "
+              f"자산 하한 ${floor/B:,.1f}B"
+              f"  ({'하한 적용' if r.floor_bound else '계속기업 적용'})")
         print(f"    EBITDA ${r.ebitda/B:,.2f}B → EV ${r.enterprise/B:,.1f}B "
               f"− 순차입 ${r.net_debt/B:,.1f}B = 자기자본 ${r.equity/B:,.1f}B")
         print(f"    주식수 {r.shares/1e6:,.0f}M → 주당 ${r.per_share:,.2f} "

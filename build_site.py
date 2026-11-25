@@ -119,7 +119,8 @@ def build(repo: str, refresh: bool = False) -> str:
 
     converts = (sum(d.principal for d in debts if d.kind == "전환사채"),
                 dil.get("Convertible notes", 0.0))
-    results = [val.evaluate(s, bs["net_debt"], shares, price, converts)
+    results = [val.evaluate(s, bs["net_debt"], shares, price, converts,
+                                bs["ppe"])
                for s in val.scenarios()]
     band = sorted(max(r.per_share, 0) for r in results)
     fair = val.fair_value(results)
