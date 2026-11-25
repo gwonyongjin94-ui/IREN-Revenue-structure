@@ -55,7 +55,11 @@ BTC_COLOR = "#8a8985"      # 회색          — 비트코인 가격(배경 지�
 
 CIK = "0001878848"  # IREN Limited (구 Iris Energy)
 TICKER = "IREN"
-SEC_UA = os.environ.get("SEC_USER_AGENT", "IREN-Revenue-Structure research@example.com")
+# `or` 를 쓴다. Actions가 시크릿이 없는 환경변수를 빈 문자열로 넘기므로
+# os.environ.get(이름, 기본값) 은 기본값이 아니라 "" 를 돌려준다. 그러면 SEC가
+# User-Agent 없는 요청으로 보고 403을 준다.
+SEC_UA = (os.environ.get("SEC_USER_AGENT")
+          or "IREN-Revenue-Structure research@example.com")
 SUBMISSIONS = f"https://data.sec.gov/submissions/CIK{CIK}.json"
 CONCEPT = "https://data.sec.gov/api/xbrl/companyconcept/CIK{cik}/{taxonomy}/{tag}.json"
 ARCHIVE = f"https://www.sec.gov/Archives/edgar/data/{int(CIK)}"
