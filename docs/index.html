@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="ko">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>IREN 매출 구조와 적정가격</title>
+<style>
+  :root {
+    --ink: #0b0b0b; --ink-2: #52514e; --ink-3: #8a8985;
+    --surface: #fcfcfb; --line: #e6e5e1; --accent: #2a78d6;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--surface); color: var(--ink);
+    font: 16px/1.65 -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo",
+          "Segoe UI", "Noto Sans KR", sans-serif;
+  }
+  .wrap { max-width: 1040px; margin: 0 auto; padding: 56px 20px 80px; }
+  h1 { font-size: 30px; margin: 0 0 6px; letter-spacing: -0.02em; }
+  .sub { color: var(--ink-2); margin: 0 0 8px; }
+  .stamp { color: var(--ink-3); font-size: 13px; margin: 0 0 36px; }
+  .cards {
+    display: grid; gap: 12px; margin: 0 0 44px;
+    grid-template-columns: repeat(auto-fit, minmax(168px, 1fr));
+  }
+  .card {
+    border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px;
+    background: #fff;
+  }
+  .card .k { color: var(--ink-3); font-size: 12px; margin-bottom: 4px; }
+  .card .v { font-size: 22px; font-weight: 650; letter-spacing: -0.01em; }
+  .card .n { color: var(--ink-2); font-size: 12px; margin-top: 2px; }
+  section { margin: 0 0 52px; }
+  h2 { font-size: 20px; margin: 0 0 6px; letter-spacing: -0.01em; }
+  section p { color: var(--ink-2); margin: 0 0 16px; max-width: 72ch; }
+  img { width: 100%; border: 1px solid var(--line); border-radius: 10px; }
+  footer {
+    border-top: 1px solid var(--line); padding-top: 20px; color: var(--ink-3);
+    font-size: 13px;
+  }
+  a { color: var(--accent); }
+</style>
+<div class="wrap">
+  <h1>IREN 매출 구조와 적정가격</h1>
+  <p class="sub">비트코인 채굴에서 AI 데이터센터로 옮겨 가는 회사를, 공시된 숫자로만 뜯어본다.</p>
+  <p class="stamp">2026-11-25 11:50 UTC · 출처 SEC EDGAR · Yahoo Finance ·
+     <a href="https://github.com/gwonyongjin94-ui/IREN-Revenue-structure">저장소</a></p>
+
+  <div class="cards"><div class="card"><div class="k">주가</div><div class="v">$12.95</div><div class="n">2026-11-24</div></div><div class="card"><div class="k">시가총액</div><div class="v">$5.50B</div><div class="n">424M주</div></div><div class="card"><div class="k">EV</div><div class="v">$9.9B</div><div class="n">순차입 $4.4B 포함</div></div><div class="card"><div class="k">FY27Q1 매출</div><div class="v">$228M</div><div class="n">AI 클라우드 88%</div></div><div class="card"><div class="k">수주잔고</div><div class="v">$20.3B</div><div class="n">2026-09-30</div></div><div class="card"><div class="k">가동 ARR</div><div class="v">약 $1B</div><div class="n">목표 $4B</div></div><div class="card"><div class="k">EV / 목표 ARR</div><div class="v">2.5x</div><div class="n">목표 달성을 전제한 값</div></div><div class="card"><div class="k">남은 CAPEX</div><div class="v">$15B</div><div class="n">미확보 $6B</div></div><div class="card"><div class="k">주당가치 범위</div><div class="v">$0 ~ $64</div><div class="n">중앙 $24</div></div></div>
+
+  <section><h2>매출 구성의 교체</h2><p>두 분기 만에 채굴이 사라지고 AI 클라우드가 매출의 88%가 됐다. 아래 패널의 비트코인 가격과 비교하면, 채굴 매출 감소분의 대부분은 가격이 아니라 스스로 전력을 돌린 결과다.</p><img src="assets/segments.png" alt="매출 구성의 교체" loading="lazy"></section><section><h2>수주잔고 $20.3B 의 구성</h2><p>잔고의 60%는 아직 개시되지 않은 임대 계약이다. 계약은 됐지만 데이터센터를 지어야 매출이 된다.</p><img src="assets/backlog.png" alt="수주잔고 $20.3B 의 구성" loading="lazy"></section><section><h2>ARR = MW(IT) x MW당 단가</h2><p>회사 목표가 함의하는 단가와 실제 체결 단가가 60% 수준으로 어긋난다. ARR 추정의 가장 큰 미지수다.</p><img src="assets/arr_model.png" alt="ARR = MW(IT) x MW당 단가" loading="lazy"></section><section><h2>자금 — $15B 중 $6B 이 열려 있다</h2><p>차입 $10B 중 3분의 2가 전환사채다. 주가가 전환가에서 멀어지면 그냥 빚으로 남는다.</p><img src="assets/funding.png" alt="자금 — $15B 중 $6B 이 열려 있다" loading="lazy"></section><section><h2>적정가격 — 단일 숫자가 아니라 범위</h2><p>결과는 달성 ARR과 배수에 거의 전적으로 달려 있다. 레버리지가 높아 가정이 조금만 움직여도 주당가치가 크게 흔들린다.</p><img src="assets/valuation.png" alt="적정가격 — 단일 숫자가 아니라 범위" loading="lazy"></section>
+
+  <footer>
+    모든 수치는 SEC 공시와 공개 시세에서 가져온다. 배수·마진·조달 구성은 가정이며
+    이 페이지에 명시돼 있다. 투자 판단이나 권유가 아니다.
+  </footer>
+</div>
