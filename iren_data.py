@@ -62,9 +62,10 @@ TICKER = "IREN"
 # User-Agent 없는 요청으로 보고 403을 준다.
 SEC_UA = (os.environ.get("SEC_USER_AGENT")
           or "IREN-Revenue-Structure research@example.com")
-SUBMISSIONS = f"https://data.sec.gov/submissions/CIK{CIK}.json"
+SUBMISSIONS = "https://data.sec.gov/submissions/CIK{cik}.json"
 CONCEPT = "https://data.sec.gov/api/xbrl/companyconcept/CIK{cik}/{taxonomy}/{tag}.json"
-ARCHIVE = f"https://www.sec.gov/Archives/edgar/data/{int(CIK)}"
+FACTS = "https://data.sec.gov/api/xbrl/companyfacts/CIK{cik}.json"
+ARCHIVE = "https://www.sec.gov/Archives/edgar/data/{num}"
 YAHOO = "https://query1.finance.yahoo.com/v8/finance/chart/{ticker}"
 
 # 지도 배경. Natural Earth 는 퍼블릭 도메인이고 110m 해상도 육지 폴리곤이
@@ -287,9 +288,11 @@ _UNITLESS = re.compile(r"\(in (shares|USD per share|segment)\)|per share|shares\
                        r"shares outstanding|interest rate|number of", re.I)
 
 
-def filings(refresh: bool = False) -> list[dict]:
+def filings(refresh: bool = False, cik: str = CIK) -> list[dict]:
     """정기공시 목록 — 최근 것부터. (form, period, accession)"""
-    raw = _cached("sec_submissions", lambda: json.loads(_get(SUBMISSIONS, json_accept=True)), refresh)
+    raw = _cached(f"sec_submissions_{cik}",
+                  lambda: json.loads(_get(SUBMISSIONS.format(cik=cik), json_accept=True)),
+                  refresh)
     recent = raw["filings"]["recent"]
     out = []
     for form, filed, period, acc in zip(recent["form"], recent["filingDate"],
@@ -301,15 +304,17 @@ def filings(refresh: bool = False) -> list[dict]:
     return out
 
 
-def rfile(acc: str, pattern: str, refresh: bool = False) -> Table:
+def rfile(acc: str, pattern: str, refresh: bool = False,
+          cik: str = CIK) -> Table:
     """공시 하나의 R파일을 이름으로 찾아 표로 돌려준다.
 
     pattern은 FilingSummary.xml의 ShortName에 걸리는 정규식이다. R번호는
     공시마다 달라지므로 번호로 찾지 않는다. 못 찾으면 바로 터뜨린다 — 조용히
     빈 표를 돌려주면 차트가 거짓말을 하게 된다.
     """
+    base = f"{ARCHIVE.format(num=int(cik))}/{acc}"
     summary = _cached(f"summary_{acc}.xml",
-                      lambda: _get(f"{ARCHIVE}/{acc}/FilingSummary.xml").decode("utf-8", "replace"),
+                      lambda: _get(f"{base}/FilingSummary.xml").decode("utf-8", "replace"),
                       refresh, text=True)
     want = re.compile(pattern, re.I)
     target = None
@@ -324,7 +329,7 @@ def rfile(acc: str, pattern: str, refresh: bool = False) -> Table:
 
     fn, short = target
     raw = _cached(f"rfile_{acc}_{fn}",
-                  lambda: _get(f"{ARCHIVE}/{acc}/{fn}").decode("utf-8", "replace"),
+                  lambda: _get(f"{base}/{fn}").decode("utf-8", "replace"),
                   refresh, text=True)
 
     rows_html = re.findall(r"(?is)<tr[^>]*>(.*?)</tr>", raw)
@@ -507,6 +512,13 @@ def quarterly_revenue(refresh: bool = False) -> list[Revenue]:
         pass
 
     return [out[q] for q in sorted(out)]
+
+
+def company_facts(cik: str = CIK, refresh: bool = False) -> dict:
+    """한 회사의 XBRL 전체. 피어 비교처럼 태그를 여럿 뒤질 때 호출 한 번이면 된다."""
+    return _cached(f"facts_{cik}",
+                   lambda: json.loads(_get(FACTS.format(cik=cik), json_accept=True)),
+                   refresh)
 
 
 def quarterly_concept(tag: str, refresh: bool = False,
@@ -708,7 +720,8 @@ def balance_sheet(refresh: bool = False) -> dict[str, float]:
     return out
 
 
-def shares_outstanding(refresh: bool = False) -> Series:
+def shares_outstanding(refresh: bool = False, cik: str = CIK,
+                       limit: int | None = None) -> Series:
     """(공시일, 표지 주식수). 시가총액에는 가중평균이 아니라 시점 주식수를 쓴다.
 
     dei companyconcept API는 복수 클래스를 가진 분기를 빼먹는다 (IREN은 B클래스가
@@ -717,10 +730,12 @@ def shares_outstanding(refresh: bool = False) -> Series:
     계산에서 분기말 주가와 맞물릴 때 며칠 차이는 무해하다.
     """
     out: Series = []
-    for f in filings(refresh):
+    # 오래된 공시에는 FilingSummary.xml 자체가 없다 (뷰어 이전 시대). 피어 비교는
+    # 최신 주식수만 필요하므로 limit 으로 훑는 범위를 줄인다.
+    for f in filings(refresh, cik)[:limit]:
         try:
-            t = rfile(f["acc"], r"^Cover|Document And Entity Information", refresh)
-        except LookupError:
+            t = rfile(f["acc"], r"^Cover|Document And Entity Information", refresh, cik)
+        except Exception:
             continue
         total, when = 0.0, None
         dates = [d for _, ds in t.groups for d in ds]

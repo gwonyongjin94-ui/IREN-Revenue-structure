@@ -23,11 +23,12 @@ run sites.py
 run backlog.py
 run arr_model.py
 run funding.py
+run peers.py
 run valuation.py
 run snapshot.py
 
 mkdir -p assets
-for f in progress segments sites backlog arr_model funding valuation; do
+for f in progress segments sites backlog arr_model funding peers valuation; do
   [ -f "output/$f.png" ] && cp "output/$f.png" "assets/$f.png"
 done
 
