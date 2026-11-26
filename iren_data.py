@@ -224,6 +224,18 @@ class Table:
             offset += len(dates)
         return None
 
+    def lookup(self, label: str, col: int) -> float | None:
+        """맥락을 가리지 않고 라벨로만 찾는다.
+
+        현금흐름표처럼 'Investing activities' 가 콜론 없이 머리행으로 오는 표는
+        모든 줄이 그 맥락을 달고 들어온다. 그 이름을 호출부가 알 필요는 없다.
+        """
+        want = label.lower()
+        for _, lab, vals in self.rows:
+            if lab.lower() == want and col < len(vals) and vals[col] is not None:
+                return vals[col]
+        return None
+
     def value(self, label: str, col: int, context: str = "") -> float | None:
         want_label, want_ctx = label.lower(), context.lower()
         for ctx, lab, vals in self.rows:
