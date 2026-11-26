@@ -11,7 +11,7 @@ README는 왜 그렇게 보는지를 적는 곳이고, 여기는 오늘 숫자�
 from __future__ import annotations
 
 import argparse
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 
 import iren_data as idata
 import disclosures as disc
@@ -69,6 +69,9 @@ def build(refresh: bool = False) -> str:
         f"| 가동 ARR | 약 ${disc.ARR_OPERATING.value/B:,.0f}B |",
         f"| 목표 ARR | ${disc.ARR_TARGET.value/B:,.0f}B "
         f"({disc.ARR_TARGET_DATE} 목표) |",
+        f"| ARR 달성률 | {disc.ARR_OPERATING.value/disc.ARR_TARGET.value*100:,.0f}% "
+        f"· 목표일까지 D-{(disc.ARR_TARGET_DATE - date.today()).days} |",
+        f"| Horizon 인도 | {disc.HORIZON_DELIVERED}/{disc.HORIZON_TOTAL}개 동 |",
         "",
         f"## 재무상태 ({bs['as_of']})", "", "| | |", "|---|---|",
         f"| 현금 + 제한현금 | ${bs['cash_total']/B:,.2f}B |",

@@ -104,6 +104,19 @@ BACKLOG_INVESTMENT_GRADE = Figure(2 / 3, "비율", "PR-Q1FY27",
 
 # ----------------------------------------------------------------- 사업 전환
 
+# Microsoft 계약($9.7B)이 걸린 Childress 내 네 개 동. 인도 진척이 이 회사
+# 실행력을 재는 가장 구체적인 눈금이다.
+HORIZON_TOTAL = 4
+HORIZON_DELIVERED = 1
+HORIZON_SRC = "10K-FY26"
+HORIZON_NOTE = ("Horizon 1은 2026년 8월 Microsoft 인도·검수 완료. "
+                "Horizon 2~4는 2026년 4분기 단계 인도 목표이고, "
+                "유예기간은 2027년 2분기 초까지다")
+MICROSOFT_CONTRACT = Figure(9.7e9, "USD", "10K-FY26",
+                            "2025년 11월 체결, 5년 평균 기간. Horizon 1~4")
+NVIDIA_CONTRACT = Figure(3.4e9, "USD", "10K-FY26",
+                         "2026년 5월 체결, 5년 클라우드 서비스 계약")
+
 MINING_IMPAIRMENT_FY26 = Figure(638.8e6, "USD", "10K-FY26",
                                 "FY2026 자산손상. 채굴기 폐기가 대부분")
 CUSTOMER_COUNT = Figure(15, "개", "PR-Q1FY27",
