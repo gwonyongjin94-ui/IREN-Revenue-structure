@@ -54,8 +54,18 @@ IT_MW_FOR_TARGET = Figure(300, "MW(IT)", "PR-Q1FY27",
                           "$4B ARR 목표가 대응하는 용량 (각주 5)")
 IT_MW_TARGET_CY2027 = Figure(800, "MW(IT)", "PR-Q1FY27",
                              "2027 역년 말 목표 (각주 12). 추가 CAPEX가 필요할 수 있다고 명시")
-POWER_SECURED = Figure(5.0, "GW", "PR-Q1FY27", "확보 전력. IT 용량이 아니다")
-PIPELINE = Figure(35.0, "GW", "PR-Q1FY27", "개발 파이프라인. 투기적 총량이라고 회사가 명시")
+# '용량'이라 불리는 숫자가 여섯 개다. 정의와 출처가 제각각이라 섞으면 안 된다.
+POWER_SECURED = Figure(5.0, "GW", "10K-FY26",
+                       "2026-06-30 기준 '계통연계 계약, 합의서(letters of agreement) "
+                       "또는 그에 준하는 것'이 걸린 총 전력. 전부 확정 계약은 아니다")
+PIPELINE = Figure(35.0, "GW", "PR-Q1FY27",
+                  "개발 파이프라인. 회사가 투기적 총량이라고 명시했다. "
+                  "같은 것을 FY2026 10-K는 'multi-GW'라고만 적는다")
+NVIDIA_PARTNERSHIP = Figure(5.0, "GW", "10K-FY26",
+                            "NVIDIA와의 전략적 제휴로 '시간을 두고' 배치할 수 있는 "
+                            "DSX 정렬 AI 인프라 상한. 비구속적이라고 명시")
+NVIDIA_GPU_RIGHT = Figure(600_000, "대", "10K-FY26",
+                          "NVIDIA 투자권리가 걸린 GPU 인도 상한. 최대 $2.1B 주식 투자권")
 
 # ----------------------------------------------------------------- 계약 단가
 
